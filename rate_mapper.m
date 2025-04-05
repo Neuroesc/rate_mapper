@@ -39,6 +39,10 @@ function [ratemap,dwellmap,spikemap,rmset,speedlift] = rate_mapper(pos,spk,rmset
 %                       the bivariate histogram method (histcounts2). 
 %                       Smoothing is performed using imgaussfilt or nanconv
 %                       depending on the value of rmset.smethod
+%                       options include: {'histogram','ash','adaptive_smoothing',...
+%                       'adaptive_binning','adaptive_smoothing_pixelwise',...
+%                       'adaptive_binning_pixelwise','KSDE','KSDE_leutgeb',...
+%                       'KSDE_leutgeb_pixelwise','tKSDE','bootstrap'}
 %
 %   'binsize'       -   Scalar, positive integer that specifies the pixel 
 %                       or bin size to use for mapping, units are in mm.
@@ -122,6 +126,19 @@ function [ratemap,dwellmap,spikemap,rmset,speedlift] = rate_mapper(pos,spk,rmset
 %                       accuracy but increased computation time.
 %
 %                       Default value is 32
+%
+%   'twindow'         - Positive integer that specifies the time window
+%                       that should be used for the temporal kernel smoothed
+%                       density estimate. Higher = smoothing over a longer time
+%                       period. Units are in s.
+%
+%                       Default value is 0.25
+%
+%   'iterations'      - Scalar, number of iterations to use when calculating the
+%                       bootstrap method - i.e. the number of sub-sampled maps
+%                       to create and average over.
+%
+%                       Default value is 100
 %
 %   additional outputs included in rmset output:
 %
@@ -228,11 +245,14 @@ function [ratemap,dwellmap,spikemap,rmset,speedlift] = rate_mapper(pos,spk,rmset
 % version 4.0.2, Release 17/11/22 Bug fix in grid vectors
 % version 4.1.0, Release 17/11/22 Added considerable comments
 % version 4.1.1, Release 17/11/22 Added fixed bin grid option to histogram
+% version 5.0.0, Release 04/11/24 Modified for use in CLUMA, simple method names
 %
-% Author: Roddy Grieves
-% Dartmouth College, Moore Hall
-% eMail: roddy.m.grieves@dartmouth.edu
-% Copyright 2021 Roddy Grieves
+% AUTHOR 
+% Roddy Grieves
+% University of Glasgow, Sir James Black Building
+% Neuroethology and Spatial Cognition Lab
+% eMail: roddy.grieves@glasgow.ac.uk
+% Copyright 2024 Roddy Grieves
 
 %% >>>>>>>>>>>>>>>>>>>>>>>>>>>>>> Heading 3
 %% >>>>>>>>>>>>>>>>>>>> Heading 2
@@ -255,6 +275,7 @@ function [ratemap,dwellmap,spikemap,rmset,speedlift] = rate_mapper(pos,spk,rmset
     defset.smethod      = 1; % smoothing method, 1 = before division, 2 = after, 3 = no smoothing
     defset.bmethod      = 0; % binning method, 0 = use rmset.binsize and create a grid with binsize x binsize pixels, N = create a grid that is NxN and ends at the data limits
     defset.twindow      = 0.25; % fyhn method, time window over which to estimate instantaneous firing rate
+    defset.iterations   = 100; % bootstrap method, number of iterations to average over
 
     %% check that all parameters are included in rmset 
     % Fill in missing inputs in rmset using defset
@@ -398,7 +419,11 @@ function [ratemap,dwellmap,spikemap,rmset,speedlift] = rate_mapper(pos,spk,rmset
                 box_size = 2*floor(rmset.ssigma/2)+1; % make sure boxcar is an odd size
                 H = ones(box_size,box_size) ./ (box_size^2); % an average boxcar
                 spikemap = imfilter(spikemap,H,0,'same','conv');  
-                ratemap = spikemap ./ dwellmap;      
+                ratemap = spikemap ./ dwellmap;   
+            elseif rmset.smethod==5 && rmset.ssigma>0 % boxcar smoothing
+                box_size = 2*floor(rmset.ssigma/2)+1; % make sure boxcar is an odd size
+                H = ones(box_size,box_size) ./ (box_size^2); % an average boxcar
+                ratemap = nanconv(spikemap./dwellmap,H,'nanout');                       
             end
 
             % Make sure low dwell times and spurious results are removed for consistency
@@ -488,7 +513,7 @@ function [ratemap,dwellmap,spikemap,rmset,speedlift] = rate_mapper(pos,spk,rmset
             ratemap(isnan(dwellmap) | isinf(abs(ratemap))) = NaN;
                  
 %% >>>>>>>>>>>>>>>>>>>> Adaptive                             
-        case {'adaptive','yadaptive'}
+        case {'adaptive_smoothing_pixelwise','adaptive_binning_pixelwise'}
 % REF
 % Skaggs and McNaughton (1998) Spatial Firing Properties of Hippocampal CA1 Populations in an Environment Containing Two Visually Identical Regions
 % https://doi.org/10.1523/JNEUROSCI.18-20-08455.1998
@@ -546,7 +571,7 @@ function [ratemap,dwellmap,spikemap,rmset,speedlift] = rate_mapper(pos,spk,rmset
                 end                 
                 
                 % >>>>>>>>>>>>>>>>>>>> Adaptive (Skaggs method)                                             
-                if strcmp(rmset.method,'adaptive')
+                if strcmp(rmset.method,'adaptive_smoothing_pixelwise')
                     a = ones(size(k)) .* rmset.ssigma; % this is the "a" in the adaptive equation
                     r = k ./ rmset.binsize; % this is the "r" in the adaptive equation
                     rindx = find( r(:) >= a(:) ./ (n(:) .* sqrt(s(:))) , 1, 'first' ); % this is the full "r >= a / (n * sqrt(s))"
@@ -565,7 +590,7 @@ function [ratemap,dwellmap,spikemap,rmset,speedlift] = rate_mapper(pos,spk,rmset
                     rmset.radmap = single(radmap); % map of bin radii (mm)
                     
                 % >>>>>>>>>>>>>>>>>>>> Adaptive (Yartsev 1s method)                                              
-                elseif strcmp(rmset.method,'yadaptive')
+                elseif strcmp(rmset.method,'adaptive_binning_pixelwise')
                     n = n .* (1/rmset.srate); % convert to time
 
                     % calculate the adaptive equation and find the minimum radius
@@ -587,7 +612,7 @@ function [ratemap,dwellmap,spikemap,rmset,speedlift] = rate_mapper(pos,spk,rmset
             end
             
 %% >>>>>>>>>>>>>>>>>>>> Adaptive (kernel accelerated method)                                   
-        case {'kadaptive','kyadaptive'}  
+        case {'adaptive_smoothing','adaptive_binning'}  
 % SIMPLE DESCRIPTION            
 % There is no Ref for this method as I don't think it has been proposed before. This mixes the benefits and methods underlying both the average shifted histogram
 % and adaptive binning. We create a fine grid (suggested is 1cm or less binsize) and bin the spike and position data into this, like we do with ASH
@@ -645,7 +670,7 @@ function [ratemap,dwellmap,spikemap,rmset,speedlift] = rate_mapper(pos,spk,rmset
             end
 
             % >>>>>>>>>>>>>>>>>>>> Adaptive (Skaggs method)  
-            if strcmp(rmset.method,'kadaptive')            
+            if strcmp(rmset.method,'adaptive_smoothing')            
                 % adaptive equation
                 amaps = ones(size(dmaps)) .* rmset.ssigma; % this is the "a" in the adaptive equation
                 rmaps = amaps ./ (dmaps .* sqrt(smaps)); % this is the "a / (n * sqrt(s))" in the adaptive equation
@@ -672,7 +697,7 @@ function [ratemap,dwellmap,spikemap,rmset,speedlift] = rate_mapper(pos,spk,rmset
                 rmset.radmap = single(radmap); % map of bin radii (mm)  
                 
             % >>>>>>>>>>>>>>>>>>>> Adaptive (Yartsev method)                                              
-            elseif strcmp(rmset.method,'kyadaptive')
+            elseif strcmp(rmset.method,'adaptive_binning')
                 tmaps = (dmaps .* (1/rmset.srate)) > rmset.ssigma;                                
                 
                 % fill in the ratemap values
@@ -696,7 +721,7 @@ function [ratemap,dwellmap,spikemap,rmset,speedlift] = rate_mapper(pos,spk,rmset
             end
               
 %% >>>>>>>>>>>>>>>>>>>> Kernel smoothed density estimate (KSDE)                       
-        case {'ksde'}
+        case {'KSDE'}
 % This method uses a multivariate kernel density estimate approach to estimate probability density functions for the position data 
 % and spike data separately. The firing rate map is then calculated as the ratio of these two maps. Here smoothing is achieved using 
 % the bandwidth of the KDE 
@@ -732,7 +757,7 @@ function [ratemap,dwellmap,spikemap,rmset,speedlift] = rate_mapper(pos,spk,rmset
             ratemap(isnan(dwellmap) | isinf(abs(ratemap))) = NaN;
             
 %% >>>>>>>>>>>>>>>>>>>> Leutgeb kernel smoothed density estimate                            
-        case {'leutgeb'}
+        case {'KSDE_leutgeb'}
 % REF
 % Leutgeb, Leutgeb, Barnes, Moser, McNaughton and Moser (2005) Independent Codes for Spatial and Episodic Memory in Hippocampal Neuronal Ensembles
 % https://doi.org/10.1126/science.1114037
@@ -791,7 +816,7 @@ function [ratemap,dwellmap,spikemap,rmset,speedlift] = rate_mapper(pos,spk,rmset
             ratemap(isnan(dwellmap) | isinf(abs(ratemap))) = NaN;
             
 %% >>>>>>>>>>>>>>>>>>>> Leutgeb 'pixelwise', or looping method                          
-        case {'leutgeb_pixelwise'}
+        case {'KSDE_leutgeb_pixelwise'}
 %% REF
 % Leutgeb, Leutgeb, Barnes, Moser, McNaughton and Moser (2005) Independent Codes for Spatial and Episodic Memory in Hippocampal Neuronal Ensembles
 % https://doi.org/10.1126/science.1114037
@@ -930,7 +955,7 @@ function [ratemap,dwellmap,spikemap,rmset,speedlift] = rate_mapper(pos,spk,rmset
             rmset.coeffv = std(rmaps,[],3,'omitnan') ./ mean(rmaps,3,'omitnan'); % coefficient of variation
                 
 %% >>>>>>>>>>>>>>>>>>>> Adaptive (kernel accelerated method)                                   
-        case {'fyhn'}  
+        case {'tKSDE'}  
 % REF for original method
 % Fyhn et al (2004) Spatial Representation in the Entorhinal Cortex
 % https://doi.org/10.1126/science.1099901
