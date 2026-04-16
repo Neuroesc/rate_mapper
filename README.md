@@ -1,14 +1,21 @@
 <img width="303" height="102" alt="neuroesc_long" src="https://github.com/user-attachments/assets/e185a933-e27d-4436-ab1f-52a4fe389e38" />
 
 # rate_mapper - map spike and position data in 2D   
-This is Matlab code which can be used to generate 2D firing rate maps
-for spatial analyses. This code can create maps using a number of different
-approaches such as a bivariate histogram, KSDE, averaged shifted histogram,
-temporal KSDE, adaptive smoothing and adaptive binning. The advantages
-and disadvantages of these approaches have been described in:
+This is Matlab code which can be used to generate 2D firing rate maps for spatial analyses. This code can create maps using a number of different approaches such as a bivariate histogram, KSDE, averaged shifted histogram, temporal KSDE, adaptive smoothing and adaptive binning. The advantages and disadvantages of these approaches have been described in:
 
 Grieves, R. M. (2023). Estimating neuronal firing density: A quantitative analysis of firing rate map algorithms. PLOS Computational Biology, 19(12), e1011763.
 https://doi.org/10.1371/journal.pcbi.1011763
+
+> [!NOTE]
+> The code originally published alongside that paper can be found [here](https://github.com/RoddyMGrieves/rate_mapper). This repository contains any recent updates and improved notes.
+
+# Contents
+- [Basic syntax](https://github.com/Neuroesc/rate_mapper/blob/main/README.md#basic-syntax)
+  - [main input options](https://github.com/Neuroesc/rate_mapper/blob/main/README.md#main-input-options-include)
+  - [rmset optional fields](https://github.com/Neuroesc/rate_mapper/blob/main/README.md#rmset-optional-fields-include)
+  - [additional outputs](https://github.com/Neuroesc/rate_mapper/blob/main/README.md#additional-outputs-included-in-rmset-output)
+- [Notes](https://github.com/Neuroesc/rate_mapper/blob/main/README.md#notes)
+- [Examples](https://github.com/Neuroesc/rate_mapper/blob/main/README.md#example)
 
 # Basic syntax
 ```
